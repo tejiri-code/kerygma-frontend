@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="150" viewBox="0 0 300 150">
+  <defs>
+    <!-- Gradient from primary (#E9FBB1) to accent (#F0A868) -->
+    <linearGradient id="grad" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#E9FBB1"/>
+      <stop offset="100%" stop-color="#F0A868"/>
+    </linearGradient>
+  </defs>
+  <!-- Background gradient -->
+  <rect width="300" height="150" fill="url(#grad)"/>
+  
+  <!-- Decorative circle using secondary color -->
+  <circle cx="75" cy="75" r="50" fill="#6A8D73" opacity="0.8"/>
+  
+  <!-- Company name -->
+  <text x="150" y="95" text-anchor="middle" font-size="36" fill="#E4FFE1" font-family="Arial, sans-serif" font-weight="bold">
+    Kerygma
+  </text>
+  
+  <!-- Optional subtle underline element using accent color -->
+  <line x1="90" y1="110" x2="210" y2="110" stroke="#FFE8C2" stroke-width="4" stroke-linecap="round" />
+</svg>
