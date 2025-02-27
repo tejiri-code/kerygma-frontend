@@ -15,7 +15,7 @@ const AutoRecorder = () => {
 
   // Connect to WebSocket endpoint for real-time transcription
   useEffect(() => {
-    const socket = new WebSocket("ws://localhost:8002/ws/transcribe");
+    const socket = new WebSocket("wss://kerygma-backend-1.onrender.com/ws/transcribe");
     socket.onopen = () => {
       console.log("WebSocket connected");
     };
@@ -74,7 +74,7 @@ const AutoRecorder = () => {
   const updateVerses = async () => {
     try {
       console.log("Updating verses for transcript:", editedTranscript);
-      const response = await axios.post("http://localhost:8002/api/detect", {
+      const response = await axios.post("https://kerygma-backend-1.onrender.com/api/detect", {
         transcript: editedTranscript,
         translation: translation,
       });
