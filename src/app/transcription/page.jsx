@@ -1,86 +1,155 @@
 "use client";
-import React, { useState, useRef, useEffect } from "react";
-import axios from "axios";
-import { motion } from "framer-motion";
+import React, { useState, useEffect } from "react";
 import Navbar from "../Navbar";
+import { motion } from "framer-motion";
+import axios from "axios";
 
-const Transcription = () => {
-  const [audioUrl, setAudioUrl] = useState("");
-  const [transcription, setTranscription] = useState("");
-  const [loading, setLoading] = useState(false);
+const AutoRecorder = () => {
+  const [transcript, setTranscript] = useState("");
+  const [editedTranscript, setEditedTranscript] = useState("");
+  const [detectedVerses, setDetectedVerses] = useState([]);
+  const [versesContent, setVersesContent] = useState({});
   const [error, setError] = useState("");
-  const inputRef = useRef(null);
+  const [ws, setWs] = useState(null);
+  const [translation, setTranslation] = useState("kjv");
 
+  // Connect to WebSocket endpoint for real-time transcription
   useEffect(() => {
-    inputRef.current && inputRef.current.focus();
+    const socket = new WebSocket("ws://localhost:8002/ws/transcribe");
+    socket.onopen = () => {
+      console.log("WebSocket connected");
+    };
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log("WebSocket message received:", data);
+        setTranscript(data.transcript);
+        setEditedTranscript(data.transcript);
+        setDetectedVerses(data.detected_verses);
+        setVersesContent(data.verses_content);
+      } catch (err) {
+        console.error("Error parsing WebSocket message:", err);
+      }
+    };
+    socket.onerror = (err) => {
+      console.error("WebSocket error", err);
+      setError("WebSocket error");
+    };
+    socket.onclose = () => {
+      console.log("WebSocket closed");
+    };
+    setWs(socket);
+    return () => socket.close();
   }, []);
 
-  const handleTranscription = async () => {
-    if (!audioUrl) {
-      setError("Please enter a valid audio URL.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    setTranscription("");
-    try {
-      const response = await axios.post("http://localhost:8000/transcribe/", {
-        audio_url: audioUrl,
+  // Automatically record and stream audio
+  useEffect(() => {
+    if (!ws) return;
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            event.data.arrayBuffer().then((buffer) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(buffer);
+              }
+            });
+          }
+        };
+        recorder.onerror = (e) => {
+          console.error("MediaRecorder error:", e.error);
+          setError("Recording error: " + e.error.message);
+        };
+        recorder.start(250);
+        console.log("Automatic recording started.");
+      })
+      .catch((err) => {
+        console.error("Error accessing microphone:", err);
+        setError("Microphone access denied.");
       });
-      setTranscription(response.data.transcription);
+  }, [ws]);
+
+  // Function to update detected verses from the edited transcript and selected translation.
+  const updateVerses = async () => {
+    try {
+      console.log("Updating verses for transcript:", editedTranscript);
+      const response = await axios.post("http://localhost:8002/api/detect", {
+        transcript: editedTranscript,
+        translation: translation,
+      });
+      console.log("Update verses response:", response.data);
+      setDetectedVerses(response.data.detected_verses);
+      setVersesContent(response.data.verses_content);
+      setTranscript(response.data.transcript);
     } catch (err) {
-      setError("Error transcribing audio. Please try again.");
+      console.error("Error updating verses:", err);
+      setError("Error updating verses.");
     }
-    setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-white">
       <Navbar />
-      <div className="max-w-3xl mx-auto px-4 py-12">
+      <div className="container mx-auto px-4 py-12">
         <motion.h2
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-3xl font-bold text-gray-800 mb-8 text-center"
+          className="text-3xl font-bold text-gray-800 text-center mb-8"
         >
-          Transcription Service
+          Real-Time Bible Verse Detection
         </motion.h2>
-        <div className="flex flex-col items-center space-y-6">
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Enter audio URL..."
-            value={audioUrl}
-            onChange={(e) => setAudioUrl(e.target.value)}
-            className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-400"
+        {error && <p className="text-red-500 text-center">{error}</p>}
+        <div className="mt-8">
+          <h3 className="text-2xl font-bold text-gray-800">Transcript:</h3>
+          <textarea
+            value={editedTranscript}
+            onChange={(e) => {
+              console.log("Edited transcript:", e.target.value);
+              setEditedTranscript(e.target.value);
+            }}
+            className="w-full p-3 border border-gray-300 rounded text-lg text-gray-700"
+            rows={4}
           />
-          <button
-            onClick={handleTranscription}
-            className="bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 px-8 rounded-full transition duration-300"
+        </div>
+        <div className="mt-4 lg:flex space-y-4 items-center">
+          <label className="block text-gray-800 font-medium mr-4">
+            Bible Translation:
+          </label>
+          <select
+            value={translation}
+            onChange={(e) => {
+              console.log("Selected translation:", e.target.value);
+              setTranslation(e.target.value);
+            }}
+            className="p-2 border border-gray-300 rounded"
           >
-            {loading ? "Transcribing..." : "Transcribe Audio"}
+            <option value="kjv">King James Version (KJV)</option>
+            <option value="web">World English Bible(WEB)</option>
+            <option value="asv">American Standard Version (ASV)</option>
+          </select>
+          <button
+            onClick={updateVerses}
+            className="lg:ml-4  px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 transition"
+          >
+            Update Verses
           </button>
-          {error && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="mt-4 text-red-500"
-            >
-              {error}
-            </motion.p>
-          )}
-          {transcription && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="mt-8 p-6 border border-gray-200 rounded bg-gray-50 shadow-sm"
-            >
-              <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                Transcription Result:
-              </h3>
-              <p className="text-lg text-gray-600">{transcription}</p>
-            </motion.div>
+        </div>
+        <div className="mt-8">
+          <h3 className="text-2xl font-bold text-gray-800">Detected Bible Verses:</h3>
+          {detectedVerses.length > 0 ? (
+            <ul className="list-disc ml-6">
+              {detectedVerses.map((verse, index) => (
+                <li key={index} className="text-lg text-gray-600">
+                  <div>{verse}</div>
+                  {versesContent[verse] && (
+                    <div className="text-sm text-gray-500">{versesContent[verse]}</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-lg text-gray-600">No verses detected yet.</p>
           )}
         </div>
       </div>
@@ -88,4 +157,4 @@ const Transcription = () => {
   );
 };
 
-export default Transcription;
+export default AutoRecorder;
