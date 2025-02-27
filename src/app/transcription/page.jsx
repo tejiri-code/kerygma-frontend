@@ -13,7 +13,7 @@ const AutoRecorder = () => {
   const [ws, setWs] = useState(null);
   const [translation, setTranslation] = useState("kjv");
 
-  // Connect to WebSocket endpoint for real-time transcription
+  // Establish WebSocket connection for real-time transcription updates.
   useEffect(() => {
     const socket = new WebSocket("wss://kerygma-backend-1.onrender.com/ws/transcribe");
     socket.onopen = () => {
@@ -24,6 +24,7 @@ const AutoRecorder = () => {
         const data = JSON.parse(event.data);
         console.log("WebSocket message received:", data);
         setTranscript(data.transcript);
+        // Also update the editable transcript so you can modify it
         setEditedTranscript(data.transcript);
         setDetectedVerses(data.detected_verses);
         setVersesContent(data.verses_content);
@@ -42,7 +43,7 @@ const AutoRecorder = () => {
     return () => socket.close();
   }, []);
 
-  // Automatically record and stream audio
+  // Automatically record and stream audio chunks.
   useEffect(() => {
     if (!ws) return;
     navigator.mediaDevices.getUserMedia({ audio: true })
@@ -61,7 +62,7 @@ const AutoRecorder = () => {
           console.error("MediaRecorder error:", e.error);
           setError("Recording error: " + e.error.message);
         };
-        recorder.start(250);
+        recorder.start(250); // send audio chunks every 250ms
         console.log("Automatic recording started.");
       })
       .catch((err) => {
@@ -70,10 +71,18 @@ const AutoRecorder = () => {
       });
   }, [ws]);
 
+  // Debounce the update of detected verses when transcript or translation changes.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      updateVerses();
+    }, 1000); // update 1 second after changes stop
+    return () => clearTimeout(timer);
+  }, [editedTranscript, translation]);
+
   // Function to update detected verses from the edited transcript and selected translation.
   const updateVerses = async () => {
     try {
-      console.log("Updating verses for transcript:", editedTranscript);
+      console.log("Updating verses for transcript:", editedTranscript, "with translation:", translation);
       const response = await axios.post("https://kerygma-backend-1.onrender.com/api/detect", {
         transcript: editedTranscript,
         translation: translation,
@@ -81,6 +90,7 @@ const AutoRecorder = () => {
       console.log("Update verses response:", response.data);
       setDetectedVerses(response.data.detected_verses);
       setVersesContent(response.data.verses_content);
+      // Optionally update transcript state if the backend modifies it.
       setTranscript(response.data.transcript);
     } catch (err) {
       console.error("Error updating verses:", err);
@@ -112,8 +122,8 @@ const AutoRecorder = () => {
             rows={4}
           />
         </div>
-        <div className="mt-4 lg:flex space-y-4 items-center">
-          <label className="block text-gray-800 font-medium mr-4">
+        <div className="mt-4 flex flex-col lg:flex-row items-center space-y-4 lg:space-y-0 lg:space-x-4">
+          <label className="block text-gray-800 font-medium">
             Bible Translation:
           </label>
           <select
@@ -125,15 +135,9 @@ const AutoRecorder = () => {
             className="p-2 border border-gray-300 rounded"
           >
             <option value="kjv">King James Version (KJV)</option>
-            <option value="web">World English Bible(WEB)</option>
+            <option value="web">World English Bible (WEB)</option>
             <option value="asv">American Standard Version (ASV)</option>
           </select>
-          <button
-            onClick={updateVerses}
-            className="lg:ml-4  px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 transition"
-          >
-            Update Verses
-          </button>
         </div>
         <div className="mt-8">
           <h3 className="text-2xl font-bold text-gray-800">Detected Bible Verses:</h3>
