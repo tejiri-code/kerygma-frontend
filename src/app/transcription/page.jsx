@@ -12,6 +12,7 @@ const AutoRecorder = () => {
   const [error, setError] = useState("");
   const [ws, setWs] = useState(null);
   const [translation, setTranslation] = useState("kjv");
+  const [updating, setUpdating] = useState(false);
 
   // Establish WebSocket connection for real-time transcription updates.
   useEffect(() => {
@@ -82,6 +83,7 @@ const AutoRecorder = () => {
   // Function to update detected verses from the edited transcript and selected translation.
   const updateVerses = async () => {
     try {
+      setUpdating(true);
       console.log("Updating verses for transcript:", editedTranscript, "with translation:", translation);
       const response = await axios.post("https://kerygma-backend-1.onrender.com/api/detect", {
         transcript: editedTranscript,
@@ -92,9 +94,11 @@ const AutoRecorder = () => {
       setVersesContent(response.data.verses_content);
       // Optionally update transcript state if the backend modifies it.
       setTranscript(response.data.transcript);
+      setUpdating(false);
     } catch (err) {
       console.error("Error updating verses:", err);
       setError("Error updating verses.");
+      setUpdating(false);
     }
   };
 
@@ -139,6 +143,19 @@ const AutoRecorder = () => {
             <option value="asv">American Standard Version (ASV)</option>
           </select>
         </div>
+        <div className="mt-4">
+          <button
+            onClick={updateVerses}
+            className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 transition"
+          >
+            Update Verses
+          </button>
+        </div>
+        {updating && (
+          <div className="mt-4 text-center">
+            <p className="text-lg text-red-600">Processing verses...</p>
+          </div>
+        )}
         <div className="mt-8">
           <h3 className="text-2xl font-bold text-gray-800">Detected Bible Verses:</h3>
           {detectedVerses.length > 0 ? (
