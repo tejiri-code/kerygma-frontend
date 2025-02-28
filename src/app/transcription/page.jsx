@@ -143,6 +143,7 @@ const AutoRecorder = () => {
             <option value="asv">American Standard Version (ASV)</option>
           </select>
         </div>
+        
         <div className="mt-4">
           <button
             onClick={updateVerses}
