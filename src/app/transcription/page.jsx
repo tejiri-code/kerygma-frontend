@@ -42,8 +42,13 @@ const LoadingSpinner = () => (
 
 // New Projection Component
 
+// Replace the existing VerseProjection component with this enhanced version
+
 const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [theme, setTheme] = useState('default'); // 'default', 'dark', 'light', 'gradient'
+  const [fontSize, setFontSize] = useState('medium'); // 'small', 'medium', 'large'
+  const [showControls, setShowControls] = useState(true);
   
   // Control handlers
   const nextVerse = () => {
@@ -58,15 +63,25 @@ const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose 
     }
   };
   
+  // Jump to specific verse
+  const goToVerse = (index) => {
+    if (index >= 0 && index < detectedVerses.length) {
+      setCurrentIndex(index);
+    }
+  };
+  
   // Setup keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
         nextVerse();
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
         previousVerse();
       } else if (e.key === 'Escape') {
         onClose();
+      } else if (e.key === 'h') {
+        // Toggle controls visibility
+        setShowControls(prev => !prev);
       }
     };
     
@@ -79,51 +94,163 @@ const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose 
   const currentVerse = detectedVerses[currentIndex];
   const currentContent = versesContent[currentVerse];
   
+  // Theme styles
+  const themeStyles = {
+    default: {
+      bg: "bg-black",
+      heading: "text-yellow-300",
+      text: "text-white",
+      controlsBg: "bg-gray-800"
+    },
+    dark: {
+      bg: "bg-gray-900",
+      heading: "text-blue-300",
+      text: "text-gray-100",
+      controlsBg: "bg-gray-800"
+    },
+    light: {
+      bg: "bg-white",
+      heading: "text-indigo-600",
+      text: "text-gray-800",
+      controlsBg: "bg-gray-100"
+    },
+    gradient: {
+      bg: "bg-gradient-to-b from-indigo-900 to-black",
+      heading: "text-yellow-200",
+      text: "text-white",
+      controlsBg: "bg-indigo-800 bg-opacity-50"
+    },
+    worship: {
+      bg: "bg-gradient-to-b from-blue-900 to-black",
+      heading: "text-amber-300",
+      text: "text-white",
+      controlsBg: "bg-gray-800 bg-opacity-70"
+    }
+  };
+  
+  // Font size classes
+  const fontSizes = {
+    small: "text-2xl",
+    medium: "text-3xl",
+    large: "text-4xl",
+    xlarge: "text-5xl"
+  };
+  
+  const currentTheme = themeStyles[theme];
+  
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col justify-center items-center text-white p-8">
-      <div className="absolute top-4 right-4 flex space-x-2">
-        <button 
-          onClick={onClose}
-          className="bg-red-600 text-white p-2 rounded hover:bg-red-700"
-          aria-label="Close projection"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+    <div className={`fixed inset-0 ${currentTheme.bg} z-50 flex justify-center items-center`}>
+      {/* Main content */}
+      <div className="flex-1 h-full flex flex-col">
+        {/* Presentation area */}
+        <div className="flex-1 flex flex-col justify-center items-center px-8 py-16 text-center">
+          <h1 className={`${fontSizes.medium} font-bold mb-8 ${currentTheme.heading}`}>
+            {currentVerse}
+          </h1>
+          <p className={`${fontSizes[fontSize]} leading-relaxed font-medium max-w-4xl ${currentTheme.text}`}>
+            {currentContent}
+          </p>
+          
+          {/* Page indicator */}
+          <div className={`absolute bottom-8 ${showControls ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}>
+            <div className="text-xl font-medium text-gray-400">
+              {currentIndex + 1} / {detectedVerses.length}
+            </div>
+          </div>
+        </div>
       </div>
       
-      <div className="max-w-4xl mx-auto text-center mb-8">
-        <h1 className="text-4xl font-bold mb-6 text-yellow-300">{currentVerse}</h1>
-        <p className="text-3xl leading-relaxed font-medium">{currentContent}</p>
-      </div>
-      
-      <div className="mt-12 flex items-center justify-center space-x-6">
-        <button
-          onClick={previousVerse}
-          disabled={currentIndex === 0}
-          className={`p-3 rounded-full ${currentIndex === 0 ? 'bg-gray-700 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-          aria-label="Previous verse"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        
-        <div className="text-xl font-medium">
-          {currentIndex + 1} / {detectedVerses.length}
+      {/* Sidebar with verse list - visible only when controls are shown */}
+      <div 
+        className={`w-80 border-l border-gray-700 h-full ${currentTheme.controlsBg} 
+          ${showControls ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}
+          transition-all duration-300`}
+      >
+        <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+          <h3 className="text-lg font-medium text-white">Verses</h3>
+          <button 
+            onClick={onClose}
+            className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
+            aria-label="Close projection"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
         
-        <button
-          onClick={nextVerse}
-          disabled={currentIndex === detectedVerses.length - 1}
-          className={`p-3 rounded-full ${currentIndex === detectedVerses.length - 1 ? 'bg-gray-700 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-          aria-label="Next verse"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+        {/* Verse list */}
+        <div className="overflow-y-auto h-[calc(100%-13rem)]">
+          {detectedVerses.map((verse, index) => (
+            <div 
+              key={verse} 
+              onClick={() => goToVerse(index)}
+              className={`p-3 cursor-pointer hover:bg-gray-700 transition-colors ${
+                index === currentIndex ? 'bg-gray-700 border-l-4 border-blue-500' : ''
+              }`}
+            >
+              <p className="text-sm font-medium text-white">{verse}</p>
+              <p className="text-xs text-gray-400 truncate">{versesContent[verse]?.substring(0, 50)}...</p>
+            </div>
+          ))}
+        </div>
+        
+        {/* Controls */}
+        <div className="p-4 border-t border-gray-700">
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">Theme</label>
+            <div className="grid grid-cols-5 gap-2">
+              {Object.keys(themeStyles).map(themeName => (
+                <button
+                  key={themeName}
+                  onClick={() => setTheme(themeName)}
+                  className={`w-full h-8 rounded ${
+                    theme === themeName ? 'ring-2 ring-blue-500' : ''
+                  } ${themeStyles[themeName].bg}`}
+                  aria-label={`${themeName} theme`}
+                />
+              ))}
+            </div>
+          </div>
+          
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">Font Size</label>
+            <div className="grid grid-cols-4 gap-2">
+              {Object.keys(fontSizes).map(size => (
+                <button
+                  key={size}
+                  onClick={() => setFontSize(size)}
+                  className={`px-2 py-1 text-xs rounded ${
+                    fontSize === size ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
+                  }`}
+                >
+                  {size.charAt(0).toUpperCase() + size.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="flex justify-between gap-2 mt-4">
+            <button
+              onClick={previousVerse}
+              disabled={currentIndex === 0}
+              className={`flex-1 p-2 rounded ${currentIndex === 0 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+            >
+              Previous
+            </button>
+            <button
+              onClick={nextVerse}
+              disabled={currentIndex === detectedVerses.length - 1}
+              className={`flex-1 p-2 rounded ${currentIndex === detectedVerses.length - 1 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+            >
+              Next
+            </button>
+          </div>
+          
+          <div className="mt-3 text-xs text-center text-gray-500">
+            Press H to hide/show controls • ESC to close • ←/→ to navigate
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -319,6 +446,47 @@ export default function Home() {
       setIsLoading(false);
     }
   };
+  // Add this function to the Home component
+
+const handleTranscriptInput = async (inputText) => {
+  if (!inputText.trim()) return;
+  
+  setTranscript(inputText);
+  setIsLoading(true);
+  setError(null);
+  
+  try {
+    const response = await fetch('http://localhost:5005/api/detect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transcript: inputText,
+        translation: selectedTranslation
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    setDetectedVerses(data.detected_verses || []);
+    setVersesContent(data.verses_content || {});
+    setActiveTab('text'); // Switch to text tab to show results
+    
+    // Auto start projection if there are verses
+    if (data.detected_verses?.length > 0) {
+      setIsProjecting(true);
+    }
+  } catch (err) {
+    console.error('Error submitting text:', err);
+    setError(`Failed to analyze text: ${err.message}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleFileUpload = async () => {
     if (!uploadedFile) return;
@@ -366,22 +534,26 @@ export default function Home() {
       setUploadedFile(e.target.files[0]);
     }
   };
-  // New function for projecting verses
-  const startProjection = () => {
-    // For single window display
-    setIsProjecting(true);
-    
-    // Alternative: For separate window projection (uncomment to use)
-    /*
-    const width = 1024;
-    const height = 768;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
+ // Replace the existing startProjection function with this enhanced version
+
+const startProjection = () => {
+  // Check if there's a second screen available
+  const hasExternalDisplay = window.screen.width < window.screen.availWidth;
+  
+  // For in-app projection (default)
+  setIsProjecting(true);
+  
+  // For external window projection
+  if (false) { // Change to true or add a UI toggle to enable this feature
+    const width = hasExternalDisplay ? window.screen.availWidth - window.screen.width : 1024;
+    const height = hasExternalDisplay ? window.screen.availHeight : 768;
+    const left = hasExternalDisplay ? window.screen.width : window.screen.width / 2 - width / 2;
+    const top = hasExternalDisplay ? 0 : window.screen.height / 2 - height / 2;
     
     const newWindow = window.open(
       '', 
       'Bible Verse Projection',
-      `width=${width},height=${height},left=${left},top=${top}`
+      `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,scrollbars=no,status=no,fullscreen=yes`
     );
     
     if (newWindow) {
@@ -393,38 +565,52 @@ export default function Home() {
         <html>
           <head>
             <title>Bible Verse Projection</title>
+            <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
             <style>
               body {
-                background-color: black;
-                color: white;
-                font-family: Arial, sans-serif;
                 margin: 0;
-                padding: 40px;
+                padding: 0;
+                overflow: hidden;
+                height: 100vh;
+                width: 100vw;
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                height: 100vh;
-                overflow: hidden;
+                background-color: black;
+                color: white;
+                font-family: system-ui, -apple-system, sans-serif;
               }
-              h1 {
-                color: #FFD700;
-                font-size: 42px;
-                margin-bottom: 30px;
-              }
-              p {
-                font-size: 36px;
-                line-height: 1.5;
+              .container {
+                max-width: 90%;
                 text-align: center;
-                max-width: 80%;
+              }
+              .verse-reference {
+                color: #FBBF24;
+                font-size: 2.5rem;
+                margin-bottom: 1.5rem;
+                font-weight: bold;
+              }
+              .verse-content {
+                font-size: 3rem;
+                line-height: 1.4;
+                font-weight: 500;
               }
               .controls {
                 position: fixed;
                 bottom: 20px;
+                left: 0;
+                right: 0;
                 display: flex;
+                justify-content: center;
                 gap: 20px;
+                opacity: 0.3;
+                transition: opacity 0.3s;
               }
-              button {
+              .controls:hover {
+                opacity: 1;
+              }
+              .nav-button {
                 background-color: rgba(255,255,255,0.2);
                 color: white;
                 border: none;
@@ -432,32 +618,39 @@ export default function Home() {
                 border-radius: 5px;
                 cursor: pointer;
               }
-              button:hover {
+              .nav-button:hover {
                 background-color: rgba(255,255,255,0.3);
+              }
+              .nav-button:disabled {
+                background-color: rgba(100,100,100,0.2);
+                cursor: not-allowed;
               }
             </style>
           </head>
           <body>
-            <div id="content">
-              <h1>${detectedVerses[0] || ''}</h1>
-              <p>${versesContent[detectedVerses[0]] || ''}</p>
+            <div class="container">
+              <div id="verse-reference" class="verse-reference"></div>
+              <div id="verse-content" class="verse-content"></div>
             </div>
             <div class="controls">
-              <button id="prev">Previous</button>
-              <span id="counter">1/${detectedVerses.length}</span>
-              <button id="next">Next</button>
+              <button id="prev" class="nav-button">Previous</button>
+              <span id="counter" class="text-white px-4 py-2"></span>
+              <button id="next" class="nav-button">Next</button>
             </div>
             <script>
               let currentIndex = 0;
               const verses = ${JSON.stringify(detectedVerses)};
               const contents = ${JSON.stringify(versesContent)};
               
-              document.getElementById('next').addEventListener('click', () => {
-                if (currentIndex < verses.length - 1) {
-                  currentIndex++;
-                  updateDisplay();
-                }
-              });
+              function updateDisplay() {
+                document.getElementById('verse-reference').textContent = verses[currentIndex] || '';
+                document.getElementById('verse-content').textContent = contents[verses[currentIndex]] || '';
+                document.getElementById('counter').textContent = \`\${currentIndex + 1}/\${verses.length}\`;
+                
+                // Update button states
+                document.getElementById('prev').disabled = currentIndex === 0;
+                document.getElementById('next').disabled = currentIndex === verses.length - 1;
+              }
               
               document.getElementById('prev').addEventListener('click', () => {
                 if (currentIndex > 0) {
@@ -466,25 +659,50 @@ export default function Home() {
                 }
               });
               
-              function updateDisplay() {
-                const h1 = document.querySelector('h1');
-                const p = document.querySelector('p');
-                const counter = document.getElementById('counter');
-                
-                h1.textContent = verses[currentIndex] || '';
-                p.textContent = contents[verses[currentIndex]] || '';
-                counter.textContent = \`\${currentIndex + 1}/\${verses.length}\`;
-              }
-              
-              window.addEventListener('keydown', (e) => {
-                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-                  document.getElementById('next').click();
-                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                  document.getElementById('prev').click();
-                } else if (e.key === 'Escape') {
-                  window.close();
+              document.getElementById('next').addEventListener('click', () => {
+                if (currentIndex < verses.length - 1) {
+                  currentIndex++;
+                  updateDisplay();
                 }
               });
+              
+              window.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
+                  if (currentIndex < verses.length - 1) {
+                    currentIndex++;
+                    updateDisplay();
+                  }
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+                  if (currentIndex > 0) {
+                    currentIndex--;
+                    updateDisplay();
+                  }
+                } else if (e.key === 'Escape') {
+                  window.close();
+                } else if (e.key === 'Home') {
+                  currentIndex = 0;
+                  updateDisplay();
+                } else if (e.key === 'End') {
+                  currentIndex = verses.length - 1;
+                  updateDisplay();
+                }
+              });
+              
+              // Auto-hide controls after 3 seconds
+              let timeout;
+              function hideControls() {
+                document.querySelector('.controls').style.opacity = '0';
+              }
+              
+              document.body.addEventListener('mousemove', () => {
+                document.querySelector('.controls').style.opacity = '1';
+                clearTimeout(timeout);
+                timeout = setTimeout(hideControls, 3000);
+              });
+              
+              // Initialize
+              updateDisplay();
+              timeout = setTimeout(hideControls, 3000);
             </script>
           </body>
         </html>
@@ -495,10 +713,11 @@ export default function Home() {
       // Handle window close
       newWindow.addEventListener('beforeunload', () => {
         setProjectionWindow(null);
+        setIsProjecting(false);
       });
     }
-    */
-  };
+  }
+};
 
   const stopProjection = () => {
     setIsProjecting(false);
@@ -720,6 +939,38 @@ export default function Home() {
             )}
           </div>
         </div>
+        // Add this component before the results section in the return statement
+
+<div className="bg-white shadow-md rounded-xl overflow-hidden mb-6">
+  <div className="bg-blue-600 px-6 py-4">
+    <h2 className="text-xl font-semibold text-white">Quick Input</h2>
+  </div>
+  <div className="p-4">
+    <form onSubmit={(e) => {
+      e.preventDefault();
+      const input = e.target.quickInput.value;
+      if (input) {
+        handleTranscriptInput(input);
+        e.target.quickInput.value = '';
+      }
+    }}>
+      <div className="flex">
+        <input
+          name="quickInput"
+          type="text"
+          placeholder="Type verse reference or quote (e.g., 'Genesis 1:1' or 'In the beginning...')"
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+        />
+        <button
+          type="submit"
+          className="px-4 py-2 bg-blue-600 text-white rounded-r-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          Detect
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
         
         {/* Results Section */}
         <div className="bg-white shadow-md rounded-xl overflow-hidden mb-6">
