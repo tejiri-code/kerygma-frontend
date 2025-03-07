@@ -41,359 +41,7 @@ const LoadingSpinner = () => (
 );
 
 
-const VerseProjection = ({ detectedVerses, versesContent, verseContext, isProjecting, onClose }) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [theme, setTheme] = useState('default');
-  const [fontSize, setFontSize] = useState('medium');
-  const [showControls, setShowControls] = useState(true);
-  const [showContext, setShowContext] = useState(false); // Toggle for showing context
-  
-  // Add this function to handle direct verse navigation
-  const goToVerse = (index) => {
-    if (index >= 0 && index < detectedVerses.length) {
-      setCurrentIndex(index);
-      setShowContext(false); // Reset context view when changing verses
-    }
-  };
 
-  // Control handlers - updated to handle context properly
-  const nextVerse = () => {
-    // If showing context, first return to current verse
-    if (showContext) {
-      setShowContext(false);
-    } 
-    // Otherwise move to next main verse if available
-    else if (currentIndex < detectedVerses.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    }
-  };
-  
-  const previousVerse = () => {
-    // If showing context, first return to current verse
-    if (showContext) {
-      setShowContext(false);
-    } 
-    // Otherwise move to previous main verse if available
-    else if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
-  };
-  
-  
-  // Modified context navigation functions
-  const showNextVerse = () => {
-    const currentVerse = detectedVerses[currentIndex];
-    
-    // Check if next verse exists in context and fetch if needed
-    if (!verseContext[currentVerse]?.next) {
-      fetchVerseContext(currentVerse, 'next');
-    }
-    
-    setShowContext('next');
-  };
-  
-  const showPreviousVerse = () => {
-    const currentVerse = detectedVerses[currentIndex];
-    
-    // Check if previous verse exists in context and fetch if needed
-    if (!verseContext[currentVerse]?.previous) {
-      fetchVerseContext(currentVerse, 'previous');
-    }
-    
-    setShowContext('previous');
-  };
-  
-  // New function to fetch context verses if not already available
-  const fetchVerseContext = async (verseRef, direction) => {
-    try {
-      const response = await fetch('http://localhost:5005/api/detect', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          transcript: verseRef, // Just send the verse reference
-          translation: 'kjv', // You might want to pass the current translation as a prop
-          include_context: true,
-          context_size: 1,
-          context_direction: direction // Specify which context to fetch
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Error fetching context: ${response.statusText}`);
-      }
-      
-      console.log('Context fetched:', verseRef, direction);
-      const data = await response.json();
-      
-      // Update context state with new data
-      if (data.context_verses && data.context_verses[verseRef]) {
-        setVerseContext(prev => ({
-          ...prev,
-          [verseRef]: {
-            ...prev[verseRef],
-            ...data.context_verses[verseRef]
-          }
-        }));
-      }
-    } catch (err) {
-      console.error('Error fetching verse context:', err);
-    }
-  };
-  
-  const resetContextView = () => {
-    setShowContext(false);
-  };
- 
-  
-  // Setup keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
-        nextVerse();
-      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-        previousVerse();
-      } else if (e.key === 'ArrowDown') {
-        showNextVerse();
-      } else if (e.key === 'ArrowUp') {
-        showPreviousVerse();
-      } else if (e.key === 'Escape') {
-        onClose();
-      } else if (e.key === 'h') {
-        // Toggle controls visibility
-        setShowControls(prev => !prev);
-      } else if (e.key === 'c') {
-        // Reset to current verse
-        resetContextView();
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, detectedVerses.length, onClose, showContext]);
-  
-  if (!isProjecting) return null;
-  
-  const currentVerse = detectedVerses[currentIndex];
-  
-  // Determine which verse to display based on context state
-  let displayedVerse = currentVerse;
-  let displayedContent = versesContent[currentVerse];
-  
-  if (showContext && verseContext[currentVerse]) {
-    if (showContext === 'previous' && verseContext[currentVerse].previous) {
-      displayedVerse = verseContext[currentVerse].previous.reference;
-      displayedContent = verseContext[currentVerse].previous.text;
-    } else if (showContext === 'next' && verseContext[currentVerse].next) {
-      displayedVerse = verseContext[currentVerse].next.reference;
-      displayedContent = verseContext[currentVerse].next.text;
-    }
-  }
-  
-  // Theme styles
-  const themeStyles = {
-    default: {
-      bg: "bg-black",
-      heading: "text-yellow-300",
-      text: "text-white",
-      controlsBg: "bg-gray-800"
-    },
-    dark: {
-      bg: "bg-gray-900",
-      heading: "text-blue-300",
-      text: "text-gray-100",
-      controlsBg: "bg-gray-800"
-    },
-    light: {
-      bg: "bg-white",
-      heading: "text-indigo-600",
-      text: "text-gray-800",
-      controlsBg: "bg-gray-100"
-    },
-    gradient: {
-      bg: "bg-gradient-to-b from-indigo-900 to-black",
-      heading: "text-yellow-200",
-      text: "text-white",
-      controlsBg: "bg-indigo-800 bg-opacity-50"
-    },
-    worship: {
-      bg: "bg-gradient-to-b from-blue-900 to-black",
-      heading: "text-amber-300",
-      text: "text-white",
-      controlsBg: "bg-gray-800 bg-opacity-70"
-    }
-  };
-  
-  // Font size classes
-  const fontSizes = {
-    small: "text-2xl",
-    medium: "text-3xl",
-    large: "text-4xl",
-    xlarge: "text-5xl"
-  };
-  
-  const currentTheme = themeStyles[theme];
-  
-  return (
-    <div className={`fixed inset-0  ${currentTheme.bg} z-50 flex justify-center items-center`}>
-      {/* Main content */}
-      <div className="flex-1 h-fit flex flex-col">
-        {/* Presentation area */}
-        <div className="flex-1 flex flex-col justify-center items-center px-8 py-16 text-center">
-          <h1 className={`${fontSizes.medium} font-bold mb-8 ${currentTheme.heading}`}>
-            {displayedVerse}
-            {showContext && <span className="ml-2 text-sm opacity-70">
-              {showContext === 'previous' ? '(Previous Verse)' : '(Next Verse)'}
-            </span>}
-          </h1>
-          <p className={`${fontSizes[fontSize]} leading-relaxed font-medium max-w-4xl ${currentTheme.text}`}>
-            {displayedContent}
-          </p>
-          
-          {/* Context navigation indicators */}
-          <div className="flex justify-between w-full max-w-4xl mt-16">
-            {verseContext[currentVerse]?.previous && (
-           <button 
-           onClick={showPreviousVerse}
-           className={`${showContext === 'previous' ? 'text-blue-400' : 'text-gray-500'} flex items-center`}
-           aria-label="Show previous verse"
-           aria-pressed={showContext === 'previous'}
-         >
-           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-             <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-           </svg>
-           Previous Verse
-         </button>
-            )}
-            
-            {showContext && (
-              <button 
-                onClick={resetContextView}
-                className="text-yellow-400 flex items-center"
-              >
-                Return to {currentVerse}
-              </button>
-            )}
-            
-            {verseContext[currentVerse]?.next && (
-              <button 
-                onClick={showNextVerse}
-                className={`${showContext === 'next' ? 'text-blue-400' : 'text-gray-500'} flex items-center ml-auto`}
-              >
-                Next Verse
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 011.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-              </button>
-            )}
-          </div>
-          
-          {/* Page indicator */}
-          <div className={`absolute bottom-8 ${showControls ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}>
-            <div className="text-xl font-medium text-gray-400">
-              {currentIndex + 1} / {detectedVerses.length}
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Sidebar with verse list - visible only when controls are shown */}
-      <div 
-        className={`w-80 border-l border-gray-700 h-fit ${currentTheme.controlsBg} 
-          ${showControls ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}
-          transition-all duration-300`}
-      >
-        <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-          <h3 className="text-lg font-medium text-white">Verses</h3>
-          <button 
-            onClick={onClose}
-            className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
-            aria-label="Close projection"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        {/* Verse list */}
-        <div className="overflow-y-auto h-[calc(100%-13rem)]">
-          {detectedVerses.map((verse, index) => (
-            <div 
-              key={verse} 
-              onClick={() => goToVerse(index)}
-              className={`p-3 cursor-pointer hover:bg-gray-700 transition-colors ${
-                index === currentIndex ? 'bg-gray-700 border-l-4 border-blue-500' : ''
-              }`}
-            >
-              <p className="text-sm font-medium text-white">{verse}</p>
-              <p className="text-xs text-gray-400 truncate">{versesContent[verse]?.substring(0, 50)}...</p>
-            </div>
-          ))}
-        </div>
-        
-        {/* Controls */}
-        <div className="p-4 border-t border-gray-700">
-          <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Theme</label>
-            <div className="grid grid-cols-5 gap-2">
-              {Object.keys(themeStyles).map(themeName => (
-                <button
-                  key={themeName}
-                  onClick={() => setTheme(themeName)}
-                  className={`w-full h-8 rounded ${
-                    theme === themeName ? 'ring-2 ring-blue-500' : ''
-                  } ${themeStyles[themeName].bg}`}
-                  aria-label={`${themeName} theme`}
-                />
-              ))}
-            </div>
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Font Size</label>
-            <div className="grid grid-cols-4 gap-2">
-              {Object.keys(fontSizes).map(size => (
-                <button
-                  key={size}
-                  onClick={() => setFontSize(size)}
-                  className={`px-2 py-1 text-xs rounded ${
-                    fontSize === size ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-                  }`}
-                >
-                  {size.charAt(0).toUpperCase() + size.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          <div className="flex justify-between gap-2 mt-4">
-          <button
-              onClick={previousVerse}
-              disabled={currentIndex === 0}
-              className={`flex-1 p-2 rounded ${currentIndex === 0 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-            >
-              Previous
-            </button>
-            <button
-              onClick={nextVerse}
-              disabled={currentIndex === detectedVerses.length - 1}
-              className={`flex-1 p-2 rounded ${currentIndex === detectedVerses.length - 1 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-            >
-              Next
-            </button>
-          </div>
-          
-          <div className="mt-3 text-xs text-center text-gray-500">
-            Press H to hide/show controls • ESC to close • ←/→ to navigate
-          </div>
-        </div>
-      </div>
-      
-    </div>
-  );
-};
 
 // New ProjectionIcon component
 const ProjectionIcon = () => (
@@ -420,13 +68,368 @@ export default function Home() {
   const [isProjecting, setIsProjecting] = useState(false); // New state for projection
   const [projectionWindow, setProjectionWindow] = useState(null); // New state for projection window
   
+
   const socketRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const VerseProjection = ({ detectedVerses, versesContent, verseContext, isProjecting, onClose }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [theme, setTheme] = useState('default');
+    const [fontSize, setFontSize] = useState('medium');
+    const [showControls, setShowControls] = useState(true);
+    const [showContext, setShowContext] = useState(false); // Toggle for showing context
+    
+    // Add this function to handle direct verse navigation
+    const goToVerse = (index) => {
+      if (index >= 0 && index < detectedVerses.length) {
+        setCurrentIndex(index);
+        setShowContext(false); // Reset context view when changing verses
+      }
+    };
+  
+    // Control handlers - updated to handle context properly
+    const nextVerse = () => {
+      // If showing context, first return to current verse
+      if (showContext) {
+        setShowContext(false);
+      } 
+      // Otherwise move to next main verse if available
+      else if (currentIndex < detectedVerses.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      }
+    };
+    
+    const previousVerse = () => {
+      // If showing context, first return to current verse
+      if (showContext) {
+        setShowContext(false);
+      } 
+      // Otherwise move to previous main verse if available
+      else if (currentIndex > 0) {
+        setCurrentIndex(currentIndex - 1);
+      }
+    };
+    
+    
+    // Modified context navigation functions
+    const showNextVerse = () => {
+      const currentVerse = detectedVerses[currentIndex];
+      
+      // Check if next verse exists in context and fetch if needed
+      if (!verseContext[currentVerse]?.next) {
+        fetchVerseContext(currentVerse, 'next');
+      }
+      
+      setShowContext('next');
+    };
+    
+    const showPreviousVerse = () => {
+      const currentVerse = detectedVerses[currentIndex];
+      
+      // Check if previous verse exists in context and fetch if needed
+      if (!verseContext[currentVerse]?.previous) {
+        fetchVerseContext(currentVerse, 'previous');
+      }
+      
+      setShowContext('previous');
+    };
+    
+    const fetchVerseContext = async (verseRef, direction) => {
+      try {
+        const response = await fetch('http://localhost:5005/api/detect', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transcript: verseRef, // Just send the verse reference
+            translation: 'kjv', // You might want to pass the current translation as a prop
+            include_context: true,
+            context_size: 1,
+            context_direction: direction // Specify which context to fetch
+          }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Error fetching context: ${response.statusText}`);
+        }
+        
+        console.log('Context fetched:', verseRef, direction);
+        const data = await response.json();
+        
+        // Update context state with new data
+        if (data.context_verses && data.context_verses[verseRef]) {
+          setVerseContext(prev => ({
+            ...prev,
+            [verseRef]: {
+              ...prev[verseRef],
+              ...data.context_verses[verseRef]
+            }
+          }));
+        }
+      } catch (err) {
+        console.error('Error fetching verse context:', err);
+      }
+    };
+    
+    const resetContextView = () => {
+      setShowContext(false);
+    };
+   
+    
+    // Setup keyboard shortcuts
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+          nextVerse();
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          previousVerse();
+        } else if (e.key === 'ArrowDown') {
+          showNextVerse();
+        } else if (e.key === 'ArrowUp') {
+          showPreviousVerse();
+        } else if (e.key === 'Escape') {
+          onClose();
+        } else if (e.key === 'h') {
+          // Toggle controls visibility
+          setShowControls(prev => !prev);
+        } else if (e.key === 'c') {
+          // Reset to current verse
+          resetContextView();
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [currentIndex, detectedVerses.length, onClose, showContext]);
+    
+    if (!isProjecting) return null;
+    
+    const currentVerse = detectedVerses[currentIndex];
+    
+    // Determine which verse to display based on context state
+    let displayedVerse = currentVerse;
+    let displayedContent = versesContent[currentVerse];
+    
+    if (showContext && verseContext[currentVerse]) {
+      if (showContext === 'previous' && verseContext[currentVerse].previous) {
+        displayedVerse = verseContext[currentVerse].previous.reference;
+        displayedContent = verseContext[currentVerse].previous.text;
+      } else if (showContext === 'next' && verseContext[currentVerse].next) {
+        displayedVerse = verseContext[currentVerse].next.reference;
+        displayedContent = verseContext[currentVerse].next.text;
+      }
+    }
+    
+    // Theme styles
+    const themeStyles = {
+      default: {
+        bg: "bg-black",
+        heading: "text-yellow-300",
+        text: "text-white",
+        controlsBg: "bg-gray-800"
+      },
+      dark: {
+        bg: "bg-gray-900",
+        heading: "text-blue-300",
+        text: "text-gray-100",
+        controlsBg: "bg-gray-800"
+      },
+      light: {
+        bg: "bg-white",
+        heading: "text-indigo-600",
+        text: "text-gray-800",
+        controlsBg: "bg-gray-100"
+      },
+      gradient: {
+        bg: "bg-gradient-to-b from-indigo-900 to-black",
+        heading: "text-yellow-200",
+        text: "text-white",
+        controlsBg: "bg-indigo-800 bg-opacity-50"
+      },
+      worship: {
+        bg: "bg-gradient-to-b from-blue-900 to-black",
+        heading: "text-amber-300",
+        text: "text-white",
+        controlsBg: "bg-gray-800 bg-opacity-70"
+      }
+    };
+    
+    // Font size classes
+    const fontSizes = {
+      small: "text-2xl",
+      medium: "text-3xl",
+      large: "text-4xl",
+      xlarge: "text-5xl"
+    };
+    
+    const currentTheme = themeStyles[theme];
+    
+    return (
+      <div className={`fixed inset-0  ${currentTheme.bg} z-50 flex justify-center items-center`}>
+        {/* Main content */}
+        <div className="flex-1 h-fit flex flex-col">
+          {/* Presentation area */}
+          <div className="flex-1 flex flex-col justify-center items-center px-8 py-16 text-center">
+            <h1 className={`${fontSizes.medium} font-bold mb-8 ${currentTheme.heading}`}>
+              {displayedVerse}
+              {showContext && <span className="ml-2 text-sm opacity-70">
+                {showContext === 'previous' ? '(Previous Verse)' : '(Next Verse)'}
+              </span>}
+            </h1>
+            <p className={`${fontSizes[fontSize]} leading-relaxed font-medium max-w-4xl ${currentTheme.text}`}>
+              {displayedContent}
+            </p>
+            
+            {/* Context navigation indicators */}
+            <div className="flex justify-between w-full max-w-4xl mt-16">
+              {verseContext[currentVerse]?.previous && (
+             <button 
+             onClick={showPreviousVerse}
+             className={`${showContext === 'previous' ? 'text-blue-400' : 'text-gray-500'} flex items-center`}
+             aria-label="Show previous verse"
+             aria-pressed={showContext === 'previous'}
+           >
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+               <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+             </svg>
+             Previous Verse
+           </button>
+              )}
+              
+              {showContext && (
+                <button 
+                  onClick={resetContextView}
+                  className="text-yellow-400 flex items-center"
+                >
+                  Return to {currentVerse}
+                </button>
+              )}
+              
+              {verseContext[currentVerse]?.next && (
+                <button 
+                  onClick={showNextVerse}
+                  className={`${showContext === 'next' ? 'text-blue-400' : 'text-gray-500'} flex items-center ml-auto`}
+                >
+                  Next Verse
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 011.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            
+            {/* Page indicator */}
+            <div className={`absolute bottom-8 ${showControls ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}>
+              <div className="text-xl font-medium text-gray-400">
+                {currentIndex + 1} / {detectedVerses.length}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Sidebar with verse list - visible only when controls are shown */}
+        <div 
+          className={`w-80 border-l border-gray-700 h-fit ${currentTheme.controlsBg} 
+            ${showControls ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}
+            transition-all duration-300`}
+        >
+          <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+            <h3 className="text-lg font-medium text-white">Verses</h3>
+            <button 
+              onClick={onClose}
+              className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
+              aria-label="Close projection"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          {/* Verse list */}
+          <div className="overflow-y-auto h-[calc(100%-13rem)]">
+            {detectedVerses.map((verse, index) => (
+              <div 
+                key={verse} 
+                onClick={() => goToVerse(index)}
+                className={`p-3 cursor-pointer hover:bg-gray-700 transition-colors ${
+                  index === currentIndex ? 'bg-gray-700 border-l-4 border-blue-500' : ''
+                }`}
+              >
+                <p className="text-sm font-medium text-white">{verse}</p>
+                <p className="text-xs text-gray-400 truncate">{versesContent[verse]?.substring(0, 50)}...</p>
+              </div>
+            ))}
+          </div>
+          
+          {/* Controls */}
+          <div className="p-4 border-t border-gray-700">
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">Theme</label>
+              <div className="grid grid-cols-5 gap-2">
+                {Object.keys(themeStyles).map(themeName => (
+                  <button
+                    key={themeName}
+                    onClick={() => setTheme(themeName)}
+                    className={`w-full h-8 rounded ${
+                      theme === themeName ? 'ring-2 ring-blue-500' : ''
+                    } ${themeStyles[themeName].bg}`}
+                    aria-label={`${themeName} theme`}
+                  />
+                ))}
+              </div>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">Font Size</label>
+              <div className="grid grid-cols-4 gap-2">
+                {Object.keys(fontSizes).map(size => (
+                  <button
+                    key={size}
+                    onClick={() => setFontSize(size)}
+                    className={`px-2 py-1 text-xs rounded ${
+                      fontSize === size ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
+                    }`}
+                  >
+                    {size.charAt(0).toUpperCase() + size.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex justify-between gap-2 mt-4">
+            <button
+                onClick={previousVerse}
+                disabled={currentIndex === 0}
+                className={`flex-1 p-2 rounded ${currentIndex === 0 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+              >
+                Previous
+              </button>
+              <button
+                onClick={nextVerse}
+                disabled={currentIndex === detectedVerses.length - 1}
+                className={`flex-1 p-2 rounded ${currentIndex === detectedVerses.length - 1 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+              >
+                Next
+              </button>
+            </div>
+            
+            <div className="mt-3 text-xs text-center text-gray-500">
+              Press H to hide/show controls • ESC to close • ←/→ to navigate
+            </div>
+          </div>
+        </div>
+        
+      </div>
+    );
+  };
   
   // Load available translations on component mount
   useEffect(() => {
     fetchTranslations();
+    
   }, []);
 
   // Close projection window when component unmounts
@@ -437,6 +440,8 @@ export default function Home() {
       }
     };
   }, [projectionWindow]);
+
+ 
 
   const fetchTranslations = async () => {
     try {
