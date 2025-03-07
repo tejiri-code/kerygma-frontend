@@ -40,59 +40,156 @@ const LoadingSpinner = () => (
   </svg>
 );
 
-// New Projection Component
 
-// Replace the existing VerseProjection component with this enhanced version
-
-const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose }) => {
+const VerseProjection = ({ detectedVerses, versesContent, verseContext, isProjecting, onClose }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [theme, setTheme] = useState('default'); // 'default', 'dark', 'light', 'gradient'
-  const [fontSize, setFontSize] = useState('medium'); // 'small', 'medium', 'large'
+  const [theme, setTheme] = useState('default');
+  const [fontSize, setFontSize] = useState('medium');
   const [showControls, setShowControls] = useState(true);
+  const [showContext, setShowContext] = useState(false); // Toggle for showing context
   
-  // Control handlers
+  // Add this function to handle direct verse navigation
+  const goToVerse = (index) => {
+    if (index >= 0 && index < detectedVerses.length) {
+      setCurrentIndex(index);
+      setShowContext(false); // Reset context view when changing verses
+    }
+  };
+
+  // Control handlers - updated to handle context properly
   const nextVerse = () => {
-    if (currentIndex < detectedVerses.length - 1) {
+    // If showing context, first return to current verse
+    if (showContext) {
+      setShowContext(false);
+    } 
+    // Otherwise move to next main verse if available
+    else if (currentIndex < detectedVerses.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
   };
   
   const previousVerse = () => {
-    if (currentIndex > 0) {
+    // If showing context, first return to current verse
+    if (showContext) {
+      setShowContext(false);
+    } 
+    // Otherwise move to previous main verse if available
+    else if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1);
     }
   };
   
-  // Jump to specific verse
-  const goToVerse = (index) => {
-    if (index >= 0 && index < detectedVerses.length) {
-      setCurrentIndex(index);
+  
+  // Modified context navigation functions
+  const showNextVerse = () => {
+    const currentVerse = detectedVerses[currentIndex];
+    
+    // Check if next verse exists in context and fetch if needed
+    if (!verseContext[currentVerse]?.next) {
+      fetchVerseContext(currentVerse, 'next');
+    }
+    
+    setShowContext('next');
+  };
+  
+  const showPreviousVerse = () => {
+    const currentVerse = detectedVerses[currentIndex];
+    
+    // Check if previous verse exists in context and fetch if needed
+    if (!verseContext[currentVerse]?.previous) {
+      fetchVerseContext(currentVerse, 'previous');
+    }
+    
+    setShowContext('previous');
+  };
+  
+  // New function to fetch context verses if not already available
+  const fetchVerseContext = async (verseRef, direction) => {
+    try {
+      const response = await fetch('http://localhost:5005/api/detect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transcript: verseRef, // Just send the verse reference
+          translation: 'kjv', // You might want to pass the current translation as a prop
+          include_context: true,
+          context_size: 1,
+          context_direction: direction // Specify which context to fetch
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error fetching context: ${response.statusText}`);
+      }
+      
+      console.log('Context fetched:', verseRef, direction);
+      const data = await response.json();
+      
+      // Update context state with new data
+      if (data.context_verses && data.context_verses[verseRef]) {
+        setVerseContext(prev => ({
+          ...prev,
+          [verseRef]: {
+            ...prev[verseRef],
+            ...data.context_verses[verseRef]
+          }
+        }));
+      }
+    } catch (err) {
+      console.error('Error fetching verse context:', err);
     }
   };
+  
+  const resetContextView = () => {
+    setShowContext(false);
+  };
+ 
   
   // Setup keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
         nextVerse();
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
         previousVerse();
+      } else if (e.key === 'ArrowDown') {
+        showNextVerse();
+      } else if (e.key === 'ArrowUp') {
+        showPreviousVerse();
       } else if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'h') {
         // Toggle controls visibility
         setShowControls(prev => !prev);
+      } else if (e.key === 'c') {
+        // Reset to current verse
+        resetContextView();
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, detectedVerses.length, onClose]);
+  }, [currentIndex, detectedVerses.length, onClose, showContext]);
   
   if (!isProjecting) return null;
   
   const currentVerse = detectedVerses[currentIndex];
-  const currentContent = versesContent[currentVerse];
+  
+  // Determine which verse to display based on context state
+  let displayedVerse = currentVerse;
+  let displayedContent = versesContent[currentVerse];
+  
+  if (showContext && verseContext[currentVerse]) {
+    if (showContext === 'previous' && verseContext[currentVerse].previous) {
+      displayedVerse = verseContext[currentVerse].previous.reference;
+      displayedContent = verseContext[currentVerse].previous.text;
+    } else if (showContext === 'next' && verseContext[currentVerse].next) {
+      displayedVerse = verseContext[currentVerse].next.reference;
+      displayedContent = verseContext[currentVerse].next.text;
+    }
+  }
   
   // Theme styles
   const themeStyles = {
@@ -139,17 +236,58 @@ const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose 
   const currentTheme = themeStyles[theme];
   
   return (
-    <div className={`fixed inset-0 ${currentTheme.bg} z-50 flex justify-center items-center`}>
+    <div className={`fixed inset-0  ${currentTheme.bg} z-50 flex justify-center items-center`}>
       {/* Main content */}
-      <div className="flex-1 h-full flex flex-col">
+      <div className="flex-1 h-fit flex flex-col">
         {/* Presentation area */}
         <div className="flex-1 flex flex-col justify-center items-center px-8 py-16 text-center">
           <h1 className={`${fontSizes.medium} font-bold mb-8 ${currentTheme.heading}`}>
-            {currentVerse}
+            {displayedVerse}
+            {showContext && <span className="ml-2 text-sm opacity-70">
+              {showContext === 'previous' ? '(Previous Verse)' : '(Next Verse)'}
+            </span>}
           </h1>
           <p className={`${fontSizes[fontSize]} leading-relaxed font-medium max-w-4xl ${currentTheme.text}`}>
-            {currentContent}
+            {displayedContent}
           </p>
+          
+          {/* Context navigation indicators */}
+          <div className="flex justify-between w-full max-w-4xl mt-16">
+            {verseContext[currentVerse]?.previous && (
+           <button 
+           onClick={showPreviousVerse}
+           className={`${showContext === 'previous' ? 'text-blue-400' : 'text-gray-500'} flex items-center`}
+           aria-label="Show previous verse"
+           aria-pressed={showContext === 'previous'}
+         >
+           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+             <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+           </svg>
+           Previous Verse
+         </button>
+            )}
+            
+            {showContext && (
+              <button 
+                onClick={resetContextView}
+                className="text-yellow-400 flex items-center"
+              >
+                Return to {currentVerse}
+              </button>
+            )}
+            
+            {verseContext[currentVerse]?.next && (
+              <button 
+                onClick={showNextVerse}
+                className={`${showContext === 'next' ? 'text-blue-400' : 'text-gray-500'} flex items-center ml-auto`}
+              >
+                Next Verse
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 011.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+          </div>
           
           {/* Page indicator */}
           <div className={`absolute bottom-8 ${showControls ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}>
@@ -162,7 +300,7 @@ const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose 
       
       {/* Sidebar with verse list - visible only when controls are shown */}
       <div 
-        className={`w-80 border-l border-gray-700 h-full ${currentTheme.controlsBg} 
+        className={`w-80 border-l border-gray-700 h-fit ${currentTheme.controlsBg} 
           ${showControls ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}
           transition-all duration-300`}
       >
@@ -231,7 +369,7 @@ const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose 
           </div>
           
           <div className="flex justify-between gap-2 mt-4">
-            <button
+          <button
               onClick={previousVerse}
               disabled={currentIndex === 0}
               className={`flex-1 p-2 rounded ${currentIndex === 0 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
@@ -252,6 +390,7 @@ const VerseProjection = ({ detectedVerses, versesContent, isProjecting, onClose 
           </div>
         </div>
       </div>
+      
     </div>
   );
 };
@@ -270,6 +409,7 @@ export default function Home() {
   const [transcript, setTranscript] = useState('');
   const [detectedVerses, setDetectedVerses] = useState([]);
   const [versesContent, setVersesContent] = useState({});
+  const [verseContext, setVerseContext] = useState({}); // New state for context verses
   const [translations, setTranslations] = useState([]);
   const [selectedTranslation, setSelectedTranslation] = useState('kjv');
   const [isLoading, setIsLoading] = useState(false);
@@ -413,45 +553,11 @@ export default function Home() {
     setStatus('idle');
   };
 
-  const handleTextSubmit = async (e) => {
-    e.preventDefault();
-    if (!transcript.trim()) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const response = await fetch('http://localhost:5005/api/detect', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          transcript,
-          translation: selectedTranslation
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      setDetectedVerses(data.detected_verses || []);
-      setVersesContent(data.verses_content || {});
-    } catch (err) {
-      console.error('Error submitting text:', err);
-      setError(`Failed to analyze text: ${err.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  // Add this function to the Home component
 
-const handleTranscriptInput = async (inputText) => {
-  if (!inputText.trim()) return;
+const handleTextSubmit = async (e) => {
+  e.preventDefault();
+  if (!transcript.trim()) return;
   
-  setTranscript(inputText);
   setIsLoading(true);
   setError(null);
   
@@ -462,8 +568,10 @@ const handleTranscriptInput = async (inputText) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        transcript: inputText,
-        translation: selectedTranslation
+        transcript,
+        translation: selectedTranslation,
+        include_context: true,
+        context_size: 2  // Increased to get more context verses
       }),
     });
     
@@ -474,11 +582,10 @@ const handleTranscriptInput = async (inputText) => {
     const data = await response.json();
     setDetectedVerses(data.detected_verses || []);
     setVersesContent(data.verses_content || {});
-    setActiveTab('text'); // Switch to text tab to show results
     
-    // Auto start projection if there are verses
-    if (data.detected_verses?.length > 0) {
-      setIsProjecting(true);
+    // Store context verses if available
+    if (data.context_verses) {
+      setVerseContext(data.context_verses);
     }
   } catch (err) {
     console.error('Error submitting text:', err);
@@ -487,6 +594,59 @@ const handleTranscriptInput = async (inputText) => {
     setIsLoading(false);
   }
 };
+
+
+  // Add this function to the Home component
+
+
+  const handleTranscriptInput = async (inputText) => {
+    if (!inputText.trim()) return;
+    
+    setTranscript(inputText);
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch('http://localhost:5005/api/detect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transcript: inputText,
+          translation: selectedTranslation,
+          include_context: true,
+          context_size: 1  // Get 1 verse before and after each detected verse
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setDetectedVerses(data.detected_verses || []);
+      setVersesContent(data.verses_content || {});
+      
+      // Store context verses if available
+      if (data.context_verses) {
+        setVerseContext(data.context_verses);
+      }
+      
+      setActiveTab('text'); // Switch to text tab to show results
+      
+      // Auto start projection if there are verses
+      if (data.detected_verses?.length > 0) {
+        setIsProjecting(true);
+      }
+    } catch (err) {
+      console.error('Error submitting text:', err);
+      setError(`Failed to analyze text: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
 
   const handleFileUpload = async () => {
     if (!uploadedFile) return;
@@ -738,11 +898,12 @@ const startProjection = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <VerseProjection 
-        detectedVerses={detectedVerses}
-        versesContent={versesContent}
-        isProjecting={isProjecting}
-        onClose={stopProjection}
-      />
+      detectedVerses={detectedVerses}
+      versesContent={versesContent}
+      verseContext={verseContext}
+      isProjecting={isProjecting}
+      onClose={stopProjection}
+    />
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6">
         {/* Hero Section */}
@@ -939,10 +1100,9 @@ const startProjection = () => {
             )}
           </div>
         </div>
-        // Add this component before the results section in the return statement
 
 <div className="bg-white shadow-md rounded-xl overflow-hidden mb-6">
-  <div className="bg-blue-600 px-6 py-4">
+  <div className="bg-[#6A8D73] px-6 py-4">
     <h2 className="text-xl font-semibold text-white">Quick Input</h2>
   </div>
   <div className="p-4">
@@ -959,11 +1119,11 @@ const startProjection = () => {
           name="quickInput"
           type="text"
           placeholder="Type verse reference or quote (e.g., 'Genesis 1:1' or 'In the beginning...')"
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-[#6A8D73] focus:border-[#6A8D73]"
         />
         <button
           type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded-r-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="px-4 py-2 bg-[#6A8D73] text-white rounded-r-md hover:bg-[#6A8D73] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6A8D73]"
         >
           Detect
         </button>
