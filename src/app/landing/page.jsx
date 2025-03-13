@@ -111,7 +111,7 @@ const Landing = () => {
         </section>
 
         {/* Testimonials Section */}
-        <section className="bg-gray-50 rounded-lg p-8">
+        {/* <section className="bg-gray-50 rounded-lg p-8">
             <div className="text-center mb-8">
                 <h2 className="text-3xl font-semibold text-gray-800">Testimonials</h2>
                 <p className="text-md text-gray-500">
@@ -142,7 +142,7 @@ const Landing = () => {
                     <h3 className="text-xl font-medium text-gray-800">- Jane Smith</h3>
                 </motion.div>
             </div>
-        </section>
+        </section> */}
         <section className="bg-gray-50 rounded-lg p-8 text-center">
           <h2 className="text-4xl font-semibold text-gray-800 mb-4">
             Ready to Transform Your Sermons?

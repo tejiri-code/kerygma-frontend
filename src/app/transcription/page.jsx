@@ -56,7 +56,7 @@ export default function Home() {
   const [versesContent, setVersesContent] = useState({});
   const [verseContext, setVerseContext] = useState({}); // New state for context verses
   const [translations, setTranslations] = useState([]);
-  const [selectedTranslation, setSelectedTranslation] = useState('kjv');
+  const [selectedTranslation, setSelectedTranslation] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -64,19 +64,112 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('voice'); // 'voice', 'upload', 'text'
   const [isProjecting, setIsProjecting] = useState(false); // New state for projection
   const [projectionWindow, setProjectionWindow] = useState(null); // New state for projection window
-  
-
   const socketRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const fileInputRef = useRef(null);
-
-  const VerseProjection = ({ detectedVerses, versesContent, verseContext, isProjecting, onClose }) => {
+  const VerseProjection = ({ 
+    detectedVerses, 
+    versesContent, 
+    verseContext, 
+    isProjecting, 
+    onClose, 
+    selectedTranslation,
+    updateVerseContext,
+    updateVersesContent,
+    setDetectedVerses 
+  }) => {
+    // Local state
     const [currentIndex, setCurrentIndex] = useState(0);
     const [theme, setTheme] = useState('default');
     const [fontSize, setFontSize] = useState('medium');
     const [showControls, setShowControls] = useState(true);
-    const [showContext, setShowContext] = useState(false); // Toggle for showing context
+    const [showContext, setShowContext] = useState(false);
+    const [isLoading, setIsLoading] = useState(false); // Add local loading state
+
+const fetchVerseContext = async (verseRef, direction = "next", count = 5) => {
+  try {
+    console.log(`Fetching ${direction} context for ${verseRef}`);
+    setIsLoading(true);
     
+    const response = await fetch('http://localhost:5005/api/verse-range', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        reference: verseRef,
+        translation: selectedTranslation,
+        count: count,
+        direction
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error fetching context: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('Verse range response:', data);
+    
+    // If we got verses back
+    if (data.verses && Object.keys(data.verses).length > 0) {
+      // Get ordered list of verse references
+      let receivedVerseRefs = Object.keys(data.verses);
+      
+      // Process the verse contents and add to state
+      receivedVerseRefs.forEach(ref => {
+        const verseData = data.verses[ref];
+        const verseText = `${verseData.text} (${verseData.translation})`;
+        updateVersesContent(ref, verseText);
+      });
+      
+      // Important: Create a chain of context relationships between consecutive verses
+      // This allows continuous navigation through the verses
+      for (let i = 0; i < receivedVerseRefs.length; i++) {
+        const currentRef = receivedVerseRefs[i];
+        const contextForVerse = {};
+        
+        // Set previous verse context if not the first verse
+        if (i > 0) {
+          const prevRef = receivedVerseRefs[i-1];
+          contextForVerse.previous = {
+            reference: prevRef,
+            text: data.verses[prevRef].text
+          };
+        }
+        
+        // Set next verse context if not the last verse
+        if (i < receivedVerseRefs.length - 1) {
+          const nextRef = receivedVerseRefs[i+1];
+          contextForVerse.next = {
+            reference: nextRef, 
+            text: data.verses[nextRef].text
+          };
+        }
+        
+        // Update context for this verse if we have any relationships
+        console.log(`Creating context for ${currentRef}:`, 
+          JSON.stringify({
+            previous: contextForVerse.previous?.reference,
+            next: contextForVerse.next?.reference
+          })
+        );
+          updateVerseContext(currentRef, contextForVerse);
+      
+      }
+      
+      return true;
+    }
+    
+    return false;
+  } catch (err) {
+    console.error('Error fetching verse context:', err);
+    return false;
+  } finally {
+    setIsLoading(false);
+  }
+};
+
     // Add this function to handle direct verse navigation
     const goToVerse = (index) => {
       if (index >= 0 && index < detectedVerses.length) {
@@ -108,68 +201,156 @@ export default function Home() {
       }
     };
     
+ const showNextVerse = async () => {
+  // If no verses detected, do nothing
+  if (detectedVerses.length === 0) return;
+  
+  const currentVerse = detectedVerses[currentIndex];
+  console.log(`Attempting to show next verse for ${currentVerse}`);
+  
+  // If already viewing a next verse in context, move to that verse in the main flow
+  if (showContext === 'next' && verseContext[currentVerse]?.next) {
+    const nextVerseRef = verseContext[currentVerse].next.reference;
+    console.log(`Moving from context view to actual verse: ${nextVerseRef}`);
     
-    // Modified context navigation functions
-    const showNextVerse = () => {
-      const currentVerse = detectedVerses[currentIndex];
-      
-      // Check if next verse exists in context and fetch if needed
-      if (!verseContext[currentVerse]?.next) {
-        fetchVerseContext(currentVerse, 'next');
-      }
-      
-      setShowContext('next');
-    };
+    // Check if this verse is already in our list
+    const nextIndex = detectedVerses.findIndex(v => v === nextVerseRef);
     
-    const showPreviousVerse = () => {
-      const currentVerse = detectedVerses[currentIndex];
+    if (nextIndex !== -1) {
+      // Move to that verse in our list
+      console.log(`Verse already in list at index ${nextIndex}`);
+      setCurrentIndex(nextIndex);
+      setShowContext(false);
+      return;
+    } else {
+      // If not in our list, add it to detectedVerses
+      const updatedDetectedVerses = [...detectedVerses, nextVerseRef];
+      console.log(`Adding verse to list at index ${updatedDetectedVerses.length - 1}`);
       
-      // Check if previous verse exists in context and fetch if needed
-      if (!verseContext[currentVerse]?.previous) {
-        fetchVerseContext(currentVerse, 'previous');
-      }
+      // Add all observed verses from the context
+      updateVersesContent(nextVerseRef, verseContext[currentVerse].next.text);
+      setDetectedVerses(updatedDetectedVerses);
       
-      setShowContext('previous');
-    };
-    
-    const fetchVerseContext = async (verseRef, direction) => {
-      try {
-        const response = await fetch('http://localhost:5005/api/detect', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            transcript: verseRef, // Just send the verse reference
-            translation: 'kjv', // You might want to pass the current translation as a prop
-            include_context: true,
-            context_size: 1,
-            context_direction: direction // Specify which context to fetch
-          }),
+      // Use a state update function to ensure we use the latest state
+      setCurrentIndex(updatedDetectedVerses.length - 1);
+      setShowContext(false);
+      setTimeout(() => {
+        fetchVerseContext(nextVerseRef, 'next', 5).then(() => {
+          console.log(`Fetched context for newly added verse: ${nextVerseRef}`);
+        }).catch(err => {
+          console.error(`Failed to fetch context for ${nextVerseRef}:`, err);
         });
-        
-        if (!response.ok) {
-          throw new Error(`Error fetching context: ${response.statusText}`);
-        }
-        
-        console.log('Context fetched:', verseRef, direction);
-        const data = await response.json();
-        
-        // Update context state with new data
-        if (data.context_verses && data.context_verses[verseRef]) {
-          setVerseContext(prev => ({
-            ...prev,
-            [verseRef]: {
-              ...prev[verseRef],
-              ...data.context_verses[verseRef]
-            }
-          }));
+      }, 100);  
+      return;
+    }
+  }
+  
+  // If not showing context, show the next verse's context
+  if (!showContext) {
+    // If we have context for the current verse, show it
+    if (verseContext[currentVerse]?.next) {
+      console.log(`Showing context for ${currentVerse}: ${verseContext[currentVerse].next.reference}`);
+      setShowContext('next');
+      return;
+    }
+    
+    // If not, fetch it first
+    if (!isLoading) {
+      console.log(`Fetching context for ${currentVerse} before showing next`);
+      setIsLoading(true);
+      try {
+        await fetchVerseContext(currentVerse, 'next', 5);
+        if (verseContext[currentVerse]?.next) {
+          console.log(`Now showing next verse context: ${verseContext[currentVerse].next.reference}`);
+          setShowContext('next');
         }
       } catch (err) {
-        console.error('Error fetching verse context:', err);
+        console.error("Error fetching next verse:", err);
+      } finally {
+        setIsLoading(false);
       }
-    };
+    }
+  }
+};
+
+const showPreviousVerse = async () => {
+  const currentVerse = detectedVerses[currentIndex];
+  console.log(`Attempting to show previous verse for ${currentVerse}`);
+  
+  // If already showing previous verse, try to add it to the navigation sequence
+  if (showContext === 'previous' && verseContext[currentVerse]?.previous) {
+    const prevVerseRef = verseContext[currentVerse].previous.reference;
+    console.log(`Adding previous verse to navigation: ${prevVerseRef}`);
     
+    // Check if this verse is already in our list
+    const prevIndex = detectedVerses.findIndex(v => v === prevVerseRef);
+    
+    if (prevIndex !== -1) {
+      // Move to that verse in our list
+      console.log(`Verse already in list at index ${prevIndex}`);
+      setCurrentIndex(prevIndex);
+      setShowContext(false);
+      return;
+    } else {
+      // If not in our list, add it to detectedVerses
+      const updatedDetectedVerses = [prevVerseRef, ...detectedVerses];
+      console.log(`Adding verse to list at index 0`);
+      
+      // Need to update both local and parent state
+      updateVersesContent(prevVerseRef, verseContext[currentVerse].previous.text);
+      
+      // Update parent component's state
+      setDetectedVerses(updatedDetectedVerses);
+      
+      // Need to update the currentIndex AFTER the array has been updated
+      setTimeout(() => {
+        setCurrentIndex(0); // It's now the first item
+        setShowContext(false);
+
+        fetchVerseContext(prevVerseRef, 'previous', 5).then(() => {
+          console.log(`Fetched context for newly added verse: ${prevVerseRef}`);
+        }).catch(err => {
+          console.error(`Failed to fetch context for ${prevVerseRef}:`, err);
+        });
+      }, 50);
+
+      
+      
+      return;
+    }
+  }
+  
+  // If we're already loading, don't do anything
+  if (isLoading) return;
+  
+  // Otherwise, fetch the previous verse context
+  if (!verseContext[currentVerse]?.previous) {
+    setIsLoading(true);
+    try {
+      const success = await fetchVerseContext(currentVerse, 'previous', 1);
+      if (!success) {
+        console.error("Failed to load previous verse context");
+        return;
+      }
+      
+      // Small delay to ensure state updates
+      await new Promise(resolve => setTimeout(resolve, 50));
+    } catch (err) {
+      console.error("Error in showPreviousVerse:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+  
+  // Now show the context - verify we actually have it
+  if (verseContext[currentVerse]?.previous) {
+    console.log(`Setting context to previous verse: ${verseContext[currentVerse].previous.reference}`);
+    setShowContext('previous');
+  } else {
+    console.error("Previous verse context not available after fetching");
+  }
+};
+     
     const resetContextView = () => {
       setShowContext(false);
     };
@@ -205,18 +386,17 @@ export default function Home() {
     
     const currentVerse = detectedVerses[currentIndex];
     
-    // Determine which verse to display based on context state
     let displayedVerse = currentVerse;
     let displayedContent = versesContent[currentVerse];
     
-    if (showContext && verseContext[currentVerse]) {
-      if (showContext === 'previous' && verseContext[currentVerse].previous) {
-        displayedVerse = verseContext[currentVerse].previous.reference;
-        displayedContent = verseContext[currentVerse].previous.text;
-      } else if (showContext === 'next' && verseContext[currentVerse].next) {
-        displayedVerse = verseContext[currentVerse].next.reference;
-        displayedContent = verseContext[currentVerse].next.text;
-      }
+    if (showContext === 'previous' && verseContext[currentVerse]?.previous) {
+      displayedVerse = verseContext[currentVerse].previous.reference;
+      displayedContent = verseContext[currentVerse].previous.text;
+      console.log(`Showing previous verse: ${displayedVerse}`);
+    } else if (showContext === 'next' && verseContext[currentVerse]?.next) {
+      displayedVerse = verseContext[currentVerse].next.reference;
+      displayedContent = verseContext[currentVerse].next.text;
+      console.log(`Showing next verse: ${displayedVerse}`);
     }
     
     // Theme styles
@@ -264,7 +444,7 @@ export default function Home() {
     const currentTheme = themeStyles[theme];
     
     return (
-      <div className={`fixed inset-0  ${currentTheme.bg} z-50 flex justify-center items-center`}>
+      <div className={`fixed h-full inset-0  ${currentTheme.bg} z-50 flex justify-center items-center`}>
         {/* Main content */}
         <div className="flex-1 h-fit flex flex-col">
           {/* Presentation area */}
@@ -280,42 +460,43 @@ export default function Home() {
             </p>
             
             {/* Context navigation indicators */}
-            <div className="flex justify-between w-full max-w-4xl mt-16">
-              {verseContext[currentVerse]?.previous && (
-             <button 
-             onClick={showPreviousVerse}
-             className={`${showContext === 'previous' ? 'text-blue-400' : 'text-gray-500'} flex items-center`}
-             aria-label="Show previous verse"
-             aria-pressed={showContext === 'previous'}
-           >
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-               <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-             </svg>
-             Previous Verse
-           </button>
-              )}
-              
-              {showContext && (
-                <button 
-                  onClick={resetContextView}
-                  className="text-yellow-400 flex items-center"
-                >
-                  Return to {currentVerse}
-                </button>
-              )}
-              
-              {verseContext[currentVerse]?.next && (
-                <button 
-                  onClick={showNextVerse}
-                  className={`${showContext === 'next' ? 'text-blue-400' : 'text-gray-500'} flex items-center ml-auto`}
-                >
-                  Next Verse
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 011.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              )}
-            </div>
+
+<div className="flex justify-between w-full max-w-4xl mt-16">
+  {verseContext[currentVerse]?.previous && (
+    <button 
+      onClick={showPreviousVerse}
+      className={`${showContext === 'previous' ? 'text-blue-400' : 'text-gray-500'} flex items-center hover:text-blue-300 transition-colors`}
+      aria-label="Show previous verse"
+      aria-pressed={showContext === 'previous'}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+      </svg>
+      Previous Verse
+    </button>
+  )}
+  
+  {showContext && (
+    <button 
+      onClick={resetContextView}
+      className="text-yellow-400 flex items-center hover:text-yellow-300 transition-colors"
+    >
+      Return to {currentVerse}
+    </button>
+  )}
+  
+  {verseContext[currentVerse]?.next && (
+    <button 
+      onClick={showNextVerse}
+      className={`${showContext === 'next' ? 'text-blue-400' : 'text-gray-500'} flex items-center ml-auto hover:text-blue-300 transition-colors`}
+    >
+      Next Verse
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 011.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+      </svg>
+    </button>
+  )}
+</div>
             
             {/* Page indicator */}
             <div className={`absolute bottom-8 ${showControls ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}>
@@ -328,7 +509,7 @@ export default function Home() {
         
         {/* Sidebar with verse list - visible only when controls are shown */}
         <div 
-          className={`w-80 border-l border-gray-700 h-fit ${currentTheme.controlsBg} 
+          className={`w-80 border-l border-gray-700 h-full ${currentTheme.controlsBg} 
             ${showControls ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}
             transition-all duration-300`}
         >
@@ -421,6 +602,23 @@ export default function Home() {
         
       </div>
     );
+  };
+
+  const updateVerseContext = (verseRef, contextData) => {
+    setVerseContext(prev => ({
+      ...prev,
+      [verseRef]: {
+        ...prev[verseRef],
+        ...contextData
+      }
+    }));
+  };
+
+  const updateVersesContent = (verseRef, content) => {
+    setVersesContent(prev => ({
+      ...prev,
+      [verseRef]: content
+    }));
   };
   
   // Load available translations on component mount
@@ -890,6 +1088,23 @@ const startProjection = () => {
     }
   };
 
+useEffect(() => {
+  const style = document.createElement('style');
+  style.innerHTML = `
+    input, textarea, select {
+      color: #000 !important;
+    }
+    ::placeholder {
+      color: #9ca3af !important; /* gray-400 */
+    }
+  `;
+  document.head.appendChild(style);
+  
+  return () => {
+    document.head.removeChild(style);
+  };
+}, []);
+
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#e9f3ec] to-white">
@@ -900,12 +1115,16 @@ const startProjection = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <VerseProjection 
-      detectedVerses={detectedVerses}
-      versesContent={versesContent}
-      verseContext={verseContext}
-      isProjecting={isProjecting}
-      onClose={stopProjection}
-    />
+        detectedVerses={detectedVerses}
+        versesContent={versesContent}
+        verseContext={verseContext}
+        isProjecting={isProjecting}
+        onClose={stopProjection}
+        selectedTranslation={selectedTranslation}
+        updateVerseContext={updateVerseContext}
+        updateVersesContent={updateVersesContent}
+        setDetectedVerses={setDetectedVerses}
+      />
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6">
         {/* Hero Section */}
@@ -1068,12 +1287,12 @@ const startProjection = () => {
                 <div className="max-w-2xl mx-auto">
                   <h3 className="text-xl font-semibold text-gray-700 mb-4">Text Analysis</h3>
                   <form onSubmit={handleTextSubmit}>
-                    <div className="mb-4">
+                    <div className="mb-4 ">
                       <textarea
                         value={transcript}
                         onChange={(e) => setTranscript(e.target.value)}
                         rows={6}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-[#6A8D73] focus:border-[#6A8D73]"
+                        className="w-full px-4 py-3 border border-gray-300  rounded-lg shadow-sm bg-white text-black focus:outline-none focus:ring-[#6A8D73] focus:border-[#6A8D73]"
                         placeholder="Type or paste text to analyze for Bible verses..."
                       ></textarea>
                     </div>
@@ -1107,7 +1326,7 @@ const startProjection = () => {
   <div className="bg-[#6A8D73] px-6 py-4">
     <h2 className="text-xl font-semibold text-white">Quick Input</h2>
   </div>
-  <div className="p-4">
+  <div className="p-4 text-black">
     <form onSubmit={(e) => {
       e.preventDefault();
       const input = e.target.quickInput.value;
@@ -1117,24 +1336,24 @@ const startProjection = () => {
       }
     }}>
       <div className="flex">
-        <input
-          name="quickInput"
-          type="text"
-          placeholder="Type verse reference or quote (e.g., 'Genesis 1:1' or 'In the beginning...')"
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-[#6A8D73] focus:border-[#6A8D73]"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2 bg-[#6A8D73] text-white rounded-r-md hover:bg-[#6A8D73] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6A8D73]"
-        >
-          Detect
-        </button>
+      <input
+        name="quickInput"
+        type="text"
+        placeholder="Type verse reference or quote (e.g., 'Genesis 1:1' or 'In the beginning...')"
+        className="flex-1 px-4 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-[#6A8D73] focus:border-[#6A8D73] text-black"
+      />
+      <button
+        type="submit"
+        className="px-4 py-2 bg-[#6A8D73] text-white rounded-r-md hover:bg-[#6A8D73] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6A8D73]"
+      >
+        Detect
+      </button>
       </div>
     </form>
+    </div>
   </div>
-</div>
-        
-        {/* Results Section */}
+      
+      {/* Results Section */}
         <div className="bg-white shadow-md rounded-xl overflow-hidden mb-6">
           <div className="bg-[#6A8D73] px-6 py-4 flex justify-between items-center">
             <h2 className="text-xl font-semibold text-white">Detected Verses</h2>
