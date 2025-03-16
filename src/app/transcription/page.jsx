@@ -640,7 +640,7 @@ const showPreviousVerse = async () => {
 
   const fetchTranslations = async () => {
     try {
-      const response = await fetch('http://localhost:5005/api/translations');
+      const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/translations');
       const data = await response.json();
       
       // Combine and deduplicate translations
@@ -680,7 +680,7 @@ const showPreviousVerse = async () => {
       
       // Set up WebSocket connection
       const socket = new WebSocket(
-        `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//localhost:5005/ws/transcribe`
+        `${window.location.protocol === 'https:' ? 'wss:' : 'wss:'}//kerygma-backend-main-1.onrender.com/ws/transcribe`
       );
       
       socket.onopen = () => {
@@ -762,7 +762,7 @@ const handleTextSubmit = async (e) => {
   setError(null);
   
   try {
-    const response = await fetch('http://localhost:5005/api/detect', {
+    const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/detect', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -807,7 +807,7 @@ const handleTextSubmit = async (e) => {
     setError(null);
     
     try {
-      const response = await fetch('http://localhost:5005/api/detect', {
+      const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/detect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
