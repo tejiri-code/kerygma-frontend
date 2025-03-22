@@ -64,6 +64,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('voice'); // 'voice', 'upload', 'text'
   const [isProjecting, setIsProjecting] = useState(false); // New state for projection
   const [projectionWindow, setProjectionWindow] = useState(null); // New state for projection window
+  const [uploadProgress, setUploadProgress] = useState(0);
   const socketRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -91,7 +92,7 @@ const fetchVerseContext = async (verseRef, direction = "next", count = 5) => {
     console.log(`Fetching ${direction} context for ${verseRef}`);
     setIsLoading(true);
     
-    const response = await fetch('http://localhost:5005/api/verse-range', {
+    const response = await fetch('http://localhost:5007/api/verse-range', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -640,7 +641,8 @@ const showPreviousVerse = async () => {
 
   const fetchTranslations = async () => {
     try {
-      const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/translations');
+      // const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/translations');
+      const response = await fetch('http://localhost:5007/api/translations');
       const data = await response.json();
       
       // Combine and deduplicate translations
@@ -679,8 +681,12 @@ const showPreviousVerse = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
       // Set up WebSocket connection
+      // const socket = new WebSocket(
+      //   `${window.location.protocol === 'https:' ? 'wss:' : 'wss:'}//kerygma-backend-main-1.onrender.com/ws/transcribe`
+      // );
+
       const socket = new WebSocket(
-        `${window.location.protocol === 'https:' ? 'wss:' : 'wss:'}//kerygma-backend-main-1.onrender.com/ws/transcribe`
+        `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//localhost:5007/ws/transcribe`
       );
       
       socket.onopen = () => {
@@ -762,7 +768,8 @@ const handleTextSubmit = async (e) => {
   setError(null);
   
   try {
-    const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/detect', {
+    // const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/detect',
+      const response = await fetch('http://localhost:5007/api/detect',{
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -807,7 +814,8 @@ const handleTextSubmit = async (e) => {
     setError(null);
     
     try {
-      const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/detect', {
+      // const response = await fetch('https://kerygma-backend-main-1.onrender.com/api/detect', {
+        const response = await fetch('http://localhost:5007/api/detect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -816,7 +824,7 @@ const handleTextSubmit = async (e) => {
           transcript: inputText,
           translation: selectedTranslation,
           include_context: true,
-          context_size: 1  // Get 1 verse before and after each detected verse
+          context_size: 5  // Get 1 verse before and after each detected verse
         }),
       });
       
@@ -848,53 +856,247 @@ const handleTextSubmit = async (e) => {
   };
 
 
-  const handleFileUpload = async () => {
-    if (!uploadedFile) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
+
+const streamAudioFile = async (audioFile, translationCode = selectedTranslation) => {
+  if (!audioFile) return;
+  
+  setIsLoading(true);
+  setError(null);
+  setUploadProgress(0); // Reset progress when starting
+  
+  try {
     // Reset previous results
     setTranscript('');
     setDetectedVerses([]);
     setVersesContent({});
     
-    const formData = new FormData();
-    formData.append('file', uploadedFile);
-    formData.append('translation', selectedTranslation);
+    // Create WebSocket connection to your backend
+    const websocket = new WebSocket(`ws://localhost:5007/ws/transcribe`);
     
-    try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+    // Track all detected verses
+    const allDetectedVerses = new Set();
+    let fullTranscript = "";
+    
+    websocket.onopen = () => {
+      // Send initial parameters
+      websocket.send(JSON.stringify({ 
+        translation: translationCode,
+        file_name: audioFile.name,
+        file_size: audioFile.size,
+        file_type: audioFile.type
+      }));
+      console.log("WebSocket connection established");
+      setStatus('processing');
       
-      if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
+      // Begin streaming the file in chunks
+      const chunkSize = 16384; // 16KB chunks
+      const reader = new FileReader();
+      let offset = 0;
+      
+      const readNextChunk = () => {
+        const slice = audioFile.slice(offset, offset + chunkSize);
+        reader.readAsArrayBuffer(slice);
+      };
+      
+      reader.onload = (e) => {
+        const chunk = e.target.result;
+        
+        if (websocket.readyState === WebSocket.OPEN) {
+          websocket.send(chunk);
+          offset += chunk.byteLength;
+          
+          // Update progress indicator
+          const progress = Math.min(100, Math.round((offset / audioFile.size) * 100));
+          setUploadProgress(progress);
+          console.log(`Upload progress: ${progress}%`);
+          
+          if (offset < audioFile.size) {
+            // Continue reading
+            setTimeout(readNextChunk, 50); // Add small delay to avoid overwhelming the server
+          } else {
+            // Send a completion message when the file is fully uploaded
+            console.log("File upload complete, sending finish signal");
+            websocket.send(JSON.stringify({ action: "complete_upload" }));
+            setStatus('transcribing');
+          }
+        }
+      };
+      
+      // Start the process
+      readNextChunk();
+    };
+    
+    websocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log("Received data:", data);
+        
+        // Update transcript
+        if (data.transcript) {
+          fullTranscript = data.transcript;
+          setTranscript(fullTranscript);
+        }
+        
+        // Process new verses
+        if (data.detected_verses && data.detected_verses.length > 0) {
+          data.detected_verses.forEach(verse => allDetectedVerses.add(verse));
+          setDetectedVerses(Array.from(allDetectedVerses));
+        }
+        
+        // Update verse content
+        if (data.verses_content) {
+          setVersesContent(prev => ({
+            ...prev,
+            ...data.verses_content
+          }));
+        }
+        
+        // Handle status messages
+        if (data.status) {
+          setStatus(data.status);
+        }
+      } catch (err) {
+        console.error("Error parsing WebSocket message:", err);
       }
-      
-      const data = await response.json();
-      setTranscript(data.transcript);
-      setDetectedVerses(data.detected_verses || []);
-      setVersesContent(data.verses_content || {});
-    } catch (err) {
-      console.error('Error uploading file:', err);
-      setError(`Failed to process audio file: ${err.message}`);
-    } finally {
+    };
+    
+    websocket.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      setError("Connection error occurred");
+    };
+    
+    websocket.onclose = () => {
+      console.log("WebSocket connection closed");
       setIsLoading(false);
-      setUploadedFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      setStatus('idle');
+    };
+  } catch (err) {
+    console.error("Error streaming file:", err);
+    setError(`Failed to stream audio: ${err.message}`);
+    setIsLoading(false);
+  }
+};
+  
+  // Helper function to stream audio in chunks
+  const streamAudioFileInChunks = (file, websocket) => {
+    const chunkSize = 16384; // 16KB chunks
+    const reader = new FileReader();
+    let offset = 0;
+    
+    const readNextChunk = () => {
+      const slice = file.slice(offset, offset + chunkSize);
+      reader.readAsArrayBuffer(slice);
+    };
+    
+    reader.onload = (e) => {
+      const chunk = e.target.result;
+      
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.send(chunk);
+        offset += chunk.byteLength;
+        
+        // Update progress indicator
+        const progress = Math.min(100, Math.round((offset / file.size) * 100));
+        updateProgressBar(progress);
+        
+        if (offset < file.size) {
+          // Continue reading
+          setTimeout(readNextChunk, 50); // Add small delay to avoid overwhelming the server
+        }
       }
+    };
+    
+    // Start the process
+    readNextChunk();
+  };
+  
+  // Helper to update the progress bar
+  const updateProgressBar = (percent) => {
+    const progressBar = document.getElementById('progress-bar');
+    if (progressBar) {
+      progressBar.style.width = `${percent}%`;
+      progressBar.textContent = `${percent}%`;
     }
   };
+  
+  // Helper to update results display
+  const updateResultsDisplay = (transcript, verses, versesContent) => {
+    const resultsContainer = document.getElementById('results-container');
+    
+    let html = `
+      <h3>Current Results (Processing...)</h3>
+      <div class="transcript-container">
+        <h4>Transcript (${transcript.length} characters)</h4>
+        <div class="transcript-text">${transcript.substring(transcript.length - 500)}...</div>
+      </div>
+      <h4>Detected Verses (${verses.length}):</h4>
+    `;
+    
+    if (verses.length === 0) {
+      html += '<p>No Bible verses detected yet</p>';
+    } else {
+      html += '<ul>';
+      verses.forEach(verse => {
+        html += `<li>
+          <strong>${verse}:</strong> 
+          ${versesContent[verse] || "Loading..."}
+        </li>`;
+      });
+      html += '</ul>';
+    }
+    
+    resultsContainer.innerHTML = html;
+  };
+
+const handleFileUpload = async () => {
+  if (!uploadedFile) return;
+  
+  setIsLoading(true);
+  setError(null);
+  
+  // Reset previous results
+  setTranscript('');
+  setDetectedVerses([]);
+  setVersesContent({});
+  
+  const formData = new FormData();
+  formData.append('file', uploadedFile);
+  formData.append('translation', selectedTranslation);
+  
+  try {
+    console.log("Uploading file:", uploadedFile.name);
+    const response = await fetch('http://localhost:5007/api/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Error ${response.status}: ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log("Upload response:", data);
+    setTranscript(data.transcript);
+    setDetectedVerses(data.detected_verses || []);
+    setVersesContent(data.verses_content || {});
+  } catch (err) {
+    console.error('Error uploading file:', err);
+    setError(`Failed to process audio file: ${err.message}`);
+  } finally {
+    setIsLoading(false);
+    setUploadedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+};
 
   const handleFileChange = (e) => {
     if (e.target.files.length > 0) {
       setUploadedFile(e.target.files[0]);
     }
   };
- // Replace the existing startProjection function with this enhanced version
 
 const startProjection = () => {
   // Check if there's a second screen available
@@ -1247,40 +1449,67 @@ useEffect(() => {
             )}
             
             {activeTab === 'upload' && (
-              <div className="flex flex-col items-center justify-center py-8">
-                <div className="w-full max-w-md p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 flex flex-col items-center">
-                  <UploadIcon className="h-12 w-12 text-[#6A8D73] mb-4" />
-                  <h3 className="text-xl font-semibold text-gray-700 mb-2">Upload Audio File</h3>
-                  <p className="text-gray-500 text-center mb-4">
-                    Supported formats: .wav, .mp3, .m4a, .ogg
-                  </p>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept=".wav,.mp3,.m4a,.ogg"
-                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#dceadf] file:text-[#6A8D73] hover:file:bg-[#c9e0cf]"
-                  />
-                  <button
-                    onClick={handleFileUpload}
-                    disabled={!uploadedFile || isLoading}
-                    className="mt-4 inline-flex items-center px-6 py-3 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-[#6A8D73] hover:bg-[#5a7c62] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6A8D73] disabled:bg-[#add1b6] w-full justify-center"
-                  >
-                    {isLoading ? (
-                      <>
-                        <LoadingSpinner className="mr-2" />
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <UploadIcon className="h-5 w-5 mr-2" />
-                        Upload and Analyze
-                      </>
-                    )}
-                  </button>
-                </div>
+  <div className="flex flex-col items-center justify-center py-8">
+    <div className="w-full max-w-md p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 flex flex-col items-center">
+      <UploadIcon className="h-12 w-12 text-[#6A8D73] mb-4" />
+      <h3 className="text-xl font-semibold text-gray-700 mb-2">Upload Audio File</h3>
+      <p className="text-gray-500 text-center mb-4">
+        Supported formats: .wav, .mp3, .m4a, .ogg
+      </p>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept=".wav,.mp3,.m4a,.ogg"
+        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#dceadf] file:text-[#6A8D73] hover:file:bg-[#c9e0cf]"
+      />
+      
+      {/* Add progress bar */}
+      {isLoading && uploadProgress > 0 && (
+        <div className="w-full mt-4">
+          <div className="relative pt-1">
+            <div className="flex mb-2 items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-[#6A8D73] bg-[#dceadf]">
+                  Uploading
+                </span>
               </div>
-            )}
+              <div className="text-right">
+                <span className="text-xs font-semibold inline-block text-[#6A8D73]">
+                  {uploadProgress}%
+                </span>
+              </div>
+            </div>
+            <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-[#dceadf]">
+              <div 
+                style={{ width: `${uploadProgress}%` }} 
+                className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-[#6A8D73] transition-width duration-500"
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <button
+        onClick={() => uploadedFile && streamAudioFile(uploadedFile, selectedTranslation)}
+        disabled={!uploadedFile || isLoading}
+        className="mt-4 inline-flex items-center px-6 py-3 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-[#6A8D73] hover:bg-[#5a7c62] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6A8D73] disabled:bg-[#add1b6] w-full justify-center"
+      >
+        {isLoading ? (
+          <>
+            <LoadingSpinner className="mr-2" />
+            Processing...
+          </>
+        ) : (
+          <>
+            <UploadIcon className="h-5 w-5 mr-2" />
+            Upload and Analyze
+          </>
+        )}
+      </button>
+    </div>
+  </div>
+)}
             
             {activeTab === 'text' && (
               <div className="py-6">
